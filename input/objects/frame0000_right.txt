@@ -1,0 +1,12 @@
+Bowl
+Cabinet
+CounterTop
+Cup
+Microwave
+Pan
+PaperTowelRoll
+PepperShaker
+SaltShaker
+Spatula
+StoveBurner
+StoveKnob

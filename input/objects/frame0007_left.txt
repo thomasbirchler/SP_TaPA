@@ -1,0 +1,8 @@
+Apple
+Bread
+CounterTop
+Floor
+GarbageCan
+Pot
+Statue
+Tomato

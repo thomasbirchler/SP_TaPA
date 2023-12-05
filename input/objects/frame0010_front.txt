@@ -1,0 +1,10 @@
+Bowl
+Cabinet
+CounterTop
+DishSponge
+Drawer
+Floor
+Potato
+Sink
+SinkBasin
+Tomato

@@ -1,0 +1,11 @@
+Apple
+Bread
+CounterTop
+CreditCard
+Floor
+GarbageCan
+Pot
+Potato
+Sink
+Statue
+Tomato

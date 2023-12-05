@@ -1,0 +1,15 @@
+Apple
+Bread
+ButterKnife
+Chair
+CounterTop
+CreditCard
+Faucet
+Floor
+GarbageCan
+Pot
+Potato
+Sink
+SinkBasin
+Statue
+Tomato

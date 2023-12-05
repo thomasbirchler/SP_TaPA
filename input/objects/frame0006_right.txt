@@ -1,0 +1,6 @@
+Bowl
+Cabinet
+CounterTop
+Fridge
+PaperTowelRoll
+Toaster

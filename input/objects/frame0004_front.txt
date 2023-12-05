@@ -1,0 +1,3 @@
+CounterTop
+Floor
+Fridge

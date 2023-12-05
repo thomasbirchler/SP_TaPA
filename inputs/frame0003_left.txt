@@ -1,0 +1,16 @@
+Apple
+Bread
+ButterKnife
+CounterTop
+CreditCard
+Faucet
+Floor
+Fork
+HousePlant
+Pot
+Potato
+Sink
+SinkBasin
+Spoon
+Statue
+Tomato
