@@ -42,7 +42,7 @@ max_new_tokens: int = 100
 # top_k: The number of top most probable tokens to consider in the sampling process.
 top_k: int = 200
 # temperature: A value controlling the randomness of the sampling process. Higher values result in more random samples.
-temperature: float = 0.8
+temperature: float = 0.4
 
 
 def prepare_model():
@@ -78,7 +78,7 @@ def prepare_model():
     return model
 
 
-def run_model(model, prompt, input=''):
+def run_model(model, prompt, input):
     """Generates a response based on a given instruction and an optional input.
         This script will only work with checkpoints from the instruction-tuned LLaMA-Adapter model.
         See `finetune_adapter.py`.
@@ -139,11 +139,11 @@ def check_if_path_is_available(path):
 
 
 def get_scene_caption():
-    scene_caption = []
+    scene_caption = [None, None, None]
     counter = 0
     for direction in directions:
         # Open the file in read mode
-        file_path = f"input/captions/caption{frame_number:04}_{direction}_prompt0.txt"
+        file_path = f"input/captions/caption{frame_number:04}_{direction}_prompt3.txt"
         check_if_path_is_available(file_path)
         try:
             with open(file_path, "r") as file:
@@ -161,29 +161,46 @@ def fuse_objects_and_scene(objects, caption) -> str:
     return prompt
 
 
-def create_prompt():
+def create_input():
     # get object list and scene captioning.
-    object_list = get_object_list()
-    scene_caption = get_scene_caption()
-    prompt = fuse_objects_and_scene(object_list, scene_caption)
-    return prompt
+    # object_list = get_object_list()
+    # scene_caption = get_scene_caption()
+    # inputt = fuse_objects_and_scene(object_list, scene_caption)
+    return "[Bread, DiningTable, Egg, Drawer, Toaster, Fork, Potato, Mirror, GarbageBag, AluminumFoil, Sink, Plate, Cup, CounterTop, SoapBottle, Shelf, Chair, StoveKnob, Pan, ButterKnife, CoffeeMachine, PepperShaker, Spoon, Pot, Window, LightSwitch, Cabinet, Spatula, SaltShaker, Apple, Faucet, StoveBurner, GarbageCan, Bowl, Lettuce, Fridge, Knife, Microwave, Mug, Tomato, Blinds, DishSponge, SideTable]"
+    # return inputt
 
 
-def save_command(navigation_command):
-    output_file = f"output/command{frame_number}.txt"
+def save_string(string, test_number, command_or_prompt):
+    output_file = ""
+    if command_or_prompt == "command":
+        output_file = f"output/test_{test_number:02}/command{frame_number}.txt"
+    elif command_or_prompt == "prompt":
+        output_file = f"output/test_{test_number:02}/prompt.txt"
+    else:
+        print("Could not save string.")
+        return
+    # Create the directory if it doesn't exist
+    os.makedirs(os.path.dirname(output_file), exist_ok=True)
     with open(output_file, "w") as file:
-        file.write(navigation_command)
+        file.write(string)
 
 
 def main():
     global frame_number
-    model = prepare_model()
-    for i in range(5):
-        prompt = create_prompt()
-        print("Prompt inserted into the model")
-        navigation_command = run_model(model, prompt)
-        save_command(navigation_command)
-        frame_number += 1
+    test_number = 16
+    for ii in range(1):
+        prompt = "Can you make me a sandwich?"
+
+        save_string(prompt, test_number, "prompt")
+        model = prepare_model()
+        for i in range(1):
+            created_input = create_input()
+            print(f"Prompt inserted into the model. Now i = {i} and ii = {ii}.")
+            navigation_command = run_model(model, prompt, created_input)
+            save_string(navigation_command, test_number, "command")
+            frame_number += 1
+        test_number += 1
+        frame_number = 0
 
 
 if __name__ == "__main__":
