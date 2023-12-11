@@ -70,7 +70,7 @@ def prepare_model():
         # 1. Load the pretrained weights
         model.load_state_dict(pretrained_checkpoint, strict=False)
         # 2. Load the fine-tuned adapter weights
-        model.load_state_dict(adapter_checkpoint, strict=False)
+        # model.load_state_dict(adapter_checkpoint, strict=False)
 
     print(f"Time to load model: {time.time() - t0:.02f} seconds.", file=sys.stderr)
     print(f"Max_seq_len input model: {max_new_tokens}", file=sys.stderr)
@@ -80,7 +80,7 @@ def prepare_model():
     return model
 
 
-def run_model(model, prompt, input):
+def run_model(model, prompt, input=""):
     """Generates a response based on a given instruction and an optional input.
         This script will only work with checkpoints from the instruction-tuned LLaMA-Adapter model.
         See `finetune_adapter.py`.
@@ -265,25 +265,25 @@ def send_data_to_socket(frame, client_socket):
 
 
 def main():
-    client_socket = setup_socket()
-    receive_data_from_socket(client_socket)
+    # client_socket = setup_socket()
+    # receive_data_from_socket(client_socket)
     global frame_number
 
-    send_data_to_socket(frame_number, "left", client_socket)
+    # send_data_to_socket(frame_number, "left", client_socket)
     test_number = 17
 
     # for ii in range(1):
-    # prompt = "Can you make me a sandwich?"
-        # save_string(prompt, test_number, "prompt")
-        # model = prepare_model()
+    prompt = ["What do Lamas eat?",
+              "Can you make me a sandwich?"]
+    model = prepare_model()
+    for i in range(len(prompt)):
+        save_string(prompt[i], test_number, "prompt")
         # for i in range(1):
-        #     created_input = create_input()
-        #     print(f"Prompt inserted into the model. Now i = {i} and ii = {ii}.")
-            # navigation_command = run_model(model, prompt, created_input)
-            # save_string(navigation_command, test_number, "command")
-            # frame_number += 1
-        # test_number += 1
-        # frame_number = 0
+            # created_input = create_input()
+            # print(f"Prompt inserted into the model. Now i = {i} and ii = {ii}.")
+        navigation_command = run_model(model, prompt[i])
+        save_string(navigation_command, test_number, "command")
+        test_number += 1
 
 
 if __name__ == "__main__":
@@ -295,8 +295,8 @@ if __name__ == "__main__":
         "ignore",
         message="ComplexHalf support is experimental and many operators don't support it yet"
     )
-    # CLI(main)
-    client_socket = setup_socket()
-    for i in range(6):
-        receive_data_from_socket(client_socket)
-    send_data_to_socket(0, client_socket)
+    CLI(main)
+    # client_socket = setup_socket()
+    # for i in range(6):
+    #     receive_data_from_socket(client_socket)
+    # send_data_to_socket(0, client_socket)
