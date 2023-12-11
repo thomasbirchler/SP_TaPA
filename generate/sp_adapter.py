@@ -17,7 +17,8 @@ from lit_llama import Tokenizer
 from lit_llama.adapter import LLaMA
 from lit_llama.utils import EmptyInitOnDevice, lazy_load, llama_model_lookup
 from scripts.prepare_alpaca import generate_prompt
-
+# from sp_socket  import setup_socket, receive_and_save_from_socket
+import socket
 
 # Global path variables
 # adapter_path: Path to the checkpoint with trained adapter weights, which are the output of `finetune_adapter.py`.
@@ -45,6 +46,7 @@ top_k: int = 200
 temperature: float = 0.4
 
 
+######### MODEL #########
 def prepare_model():
     # Args:
     #     prompt: The prompt/instruction (Alpaca style).
@@ -117,6 +119,7 @@ def run_model(model, prompt, input):
     return output
 
 
+######### PREPARE PROMPT AND INPUT #########
 def get_object_list():
     object_list = [None, None, None]
     counter = 0
@@ -163,11 +166,11 @@ def fuse_objects_and_scene(objects, caption) -> str:
 
 def create_input():
     # get object list and scene captioning.
-    # object_list = get_object_list()
-    # scene_caption = get_scene_caption()
-    # inputt = fuse_objects_and_scene(object_list, scene_caption)
-    return "[Bread, DiningTable, Egg, Drawer, Toaster, Fork, Potato, Mirror, GarbageBag, AluminumFoil, Sink, Plate, Cup, CounterTop, SoapBottle, Shelf, Chair, StoveKnob, Pan, ButterKnife, CoffeeMachine, PepperShaker, Spoon, Pot, Window, LightSwitch, Cabinet, Spatula, SaltShaker, Apple, Faucet, StoveBurner, GarbageCan, Bowl, Lettuce, Fridge, Knife, Microwave, Mug, Tomato, Blinds, DishSponge, SideTable]"
-    # return inputt
+    object_list = get_object_list()
+    scene_caption = get_scene_caption()
+    inputt = fuse_objects_and_scene(object_list, scene_caption)
+    # return "[Bread, DiningTable, Egg, Drawer, Toaster, Fork, Potato, Mirror, GarbageBag, AluminumFoil, Sink, Plate, Cup, CounterTop, SoapBottle, Shelf, Chair, StoveKnob, Pan, ButterKnife, CoffeeMachine, PepperShaker, Spoon, Pot, Window, LightSwitch, Cabinet, Spatula, SaltShaker, Apple, Faucet, StoveBurner, GarbageCan, Bowl, Lettuce, Fridge, Knife, Microwave, Mug, Tomato, Blinds, DishSponge, SideTable]"
+    return inputt
 
 
 def save_string(string, test_number, command_or_prompt):
@@ -185,22 +188,102 @@ def save_string(string, test_number, command_or_prompt):
         file.write(string)
 
 
-def main():
-    global frame_number
-    test_number = 16
-    for ii in range(1):
-        prompt = "Can you make me a sandwich?"
+######### SOCKET #########
+def setup_socket():
+    host = '192.168.1.204'
+    port = 54320
+    #  Create a server socket
+    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server_socket.bind((host, port))
+    server_socket.listen(4)
+    print("Waiting for a connection...")
 
-        save_string(prompt, test_number, "prompt")
-        model = prepare_model()
-        for i in range(1):
-            created_input = create_input()
-            print(f"Prompt inserted into the model. Now i = {i} and ii = {ii}.")
-            navigation_command = run_model(model, prompt, created_input)
-            save_string(navigation_command, test_number, "command")
-            frame_number += 1
-        test_number += 1
-        frame_number = 0
+    # Accept a client connection
+    client_socket, addr = server_socket.accept()
+    print("Connected by", addr)
+
+    return client_socket
+
+
+def receive_data_from_socket(client_socket):
+    while True:
+        file_data = b''
+        file_name = b''
+
+        # Receive the filename
+        while True:
+            data = client_socket.recv(1)
+            if data == b'\0':
+                break
+            file_name += data
+        # Decode the filename
+        file_name = file_name.decode("utf-8")
+
+        # Specify the saving location and file name
+        # save_location = "/home/bthomas/SP_TaPA/input/socket/"
+        current_directory = os.getcwd()
+        file_path = os.path.join(current_directory, file_name)
+
+        # Receive and save the file based on its extension
+        with open(file_path, 'wb') as file:
+            buffer = b''
+            while True:
+                # Receive and save the text file
+                data = client_socket.recv(1024)
+                if not data:
+                    break
+                # Add the newly received data to the buffer
+                buffer += data
+                while b'FILE_END' in buffer:
+                    # Split buffer at the first occurrence of 'FILE_END'
+                    file_data, buffer = buffer.split(b'FILE_END', 1)
+                    # Write the data to the file
+                    # file_data = file_data.decode("utf-8")
+                    file.write(file_data)
+                    print(f"Text file {file_name} saved.")
+                    return
+
+
+def send_data_to_socket(frame, client_socket):
+    file_name = f"command{frame:04}.txt"
+    current_directory = os.getcwd()
+    file_path = os.path.join(current_directory, "output", file_name)
+    # Send the filename first
+    client_socket.send(file_name.encode("utf-8"))
+
+    # Send a delimiter to separate filename and content
+    client_socket.send(b'\0')
+    with open(file_path, 'rb') as text_file:
+        # Send file in batches
+        text_data = text_file.read(1024)
+        while text_data:
+            client_socket.send(text_data)
+            text_data = text_file.read(1024)
+    # Send a marker to indicate the end of the file
+    client_socket.send(b'FILE_END')
+    print(f"File {file_name} sent.")
+
+
+def main():
+    client_socket = setup_socket()
+    receive_data_from_socket(client_socket)
+    global frame_number
+
+    send_data_to_socket(frame_number, "left", client_socket)
+    test_number = 17
+
+    # for ii in range(1):
+    # prompt = "Can you make me a sandwich?"
+        # save_string(prompt, test_number, "prompt")
+        # model = prepare_model()
+        # for i in range(1):
+        #     created_input = create_input()
+        #     print(f"Prompt inserted into the model. Now i = {i} and ii = {ii}.")
+            # navigation_command = run_model(model, prompt, created_input)
+            # save_string(navigation_command, test_number, "command")
+            # frame_number += 1
+        # test_number += 1
+        # frame_number = 0
 
 
 if __name__ == "__main__":
@@ -212,4 +295,8 @@ if __name__ == "__main__":
         "ignore",
         message="ComplexHalf support is experimental and many operators don't support it yet"
     )
-    CLI(main)
+    # CLI(main)
+    client_socket = setup_socket()
+    for i in range(6):
+        receive_data_from_socket(client_socket)
+    send_data_to_socket(0, client_socket)
