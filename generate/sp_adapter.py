@@ -20,30 +20,8 @@ from scripts.prepare_alpaca import generate_prompt
 # from sp_socket  import setup_socket, receive_and_save_from_socket
 import socket
 
-# Global path variables
-# adapter_path: Path to the checkpoint with trained adapter weights, which are the output of `finetune_adapter.py`.
-adapter_path: Path = Path("out/adapter/alpaca/lit-llama-adapter-finetuned.pth")
-# pretrained_path: The path to the checkpoint with pretrained LLaMA weights.
-pretrained_path: Path = Path("checkpoints/lit-llama/7B/lit-llama.pth")
-# tokenizer_path: The tokenizer path to load.
-tokenizer_path: Path = Path("checkpoints/lit-llama/tokenizer.model")
-# Initialize a 'Fabric' object for device configuration and management.
-fabric = L.Fabric(devices=1)
-# Keep track which frame we are at
-frame_number = 0
 # all directions
 directions = ["left", "front", "right"]
-
-# Global model parameters
-# quantize: Whether to quantize the model and using which method:
-# ``"llm.int8"``: LLM.int8() mode, ``"gptq.int4"``: GPTQ 4-bit mode.
-quantize: Optional[str] = None
-# max_new_tokens: The number of generation steps to take.\
-max_new_tokens: int = 100
-# top_k: The number of top most probable tokens to consider in the sampling process.
-top_k: int = 200
-# temperature: A value controlling the randomness of the sampling process. Higher values result in more random samples.
-temperature: float = 0.4
 
 
 ######### MODEL #########
@@ -51,9 +29,20 @@ def prepare_model():
     # Args:
     #     prompt: The prompt/instruction (Alpaca style).
     #     input: Optional input (Alpaca style).
+
+    # adapter_path: Path to the checkpoint with trained adapter weights, which are the output of `finetune_adapter.py`.
+    adapter_path: Path = Path("out/adapter/alpaca/lit-llama-adapter-finetuned.pth")
+    # pretrained_path: The path to the checkpoint with pretrained LLaMA weights.
+    pretrained_path: Path = Path("checkpoints/lit-llama/7B/lit-llama.pth")
+    # quantize: Whether to quantize the model and using which method:
+    # ``"llm.int8"``: LLM.int8() mode, ``"gptq.int4"``: GPTQ 4-bit mode.
+    quantize: Optional[str] = None
+
     assert adapter_path.is_file()
     assert pretrained_path.is_file()
-    assert tokenizer_path.is_file()
+
+    # Initialize a 'Fabric' object for device configuration and management.
+    fabric = L.Fabric(devices=1)
 
     dtype = torch.bfloat16 if fabric.device.type == "cuda" and torch.cuda.is_bf16_supported() else torch.float32
 
@@ -73,18 +62,28 @@ def prepare_model():
         # model.load_state_dict(adapter_checkpoint, strict=False)
 
     print(f"Time to load model: {time.time() - t0:.02f} seconds.", file=sys.stderr)
-    print(f"Max_seq_len input model: {max_new_tokens}", file=sys.stderr)
+    # print(f"Max_seq_len input model: {max_new_tokens}", file=sys.stderr)
 
     model.eval()
     model = fabric.setup_module(model)
     return model
 
 
-def run_model(model, prompt, input=""):
+def run_model(model, prompt, test_number, iteration, input=""):
     """Generates a response based on a given instruction and an optional input.
         This script will only work with checkpoints from the instruction-tuned LLaMA-Adapter model.
         See `finetune_adapter.py`.
     """
+    # tokenizer_path: The tokenizer path to load.
+    tokenizer_path: Path = Path("checkpoints/lit-llama/tokenizer.model")
+    # max_new_tokens: The number of generation steps to take.\
+    max_new_tokens: int = 100
+    # top_k: The number of top most probable tokens to consider in the sampling process.
+    top_k: int = 200
+    # temperature: A value controlling the randomness of the sampling process. Higher values result in more random samples.
+    temperature: float = 0.8
+
+    assert tokenizer_path.is_file()
     tokenizer = Tokenizer(tokenizer_path)
     sample = {"instruction": prompt, "input": input}
     prompt = generate_prompt(sample)
@@ -108,46 +107,50 @@ def run_model(model, prompt, input=""):
     t = time.perf_counter() - t0
 
     output = tokenizer.decode(y)
+    save_string(prompt, iteration, test_number, command=False, test=True)
+    save_string(output, iteration, test_number, command=True, test=True)
     output = output.split("### Response:")[1].strip()
     print(output)
 
     tokens_generated = y.size(0) - prompt_length
     print(f"\n\nTime for inference: {t:.02f} sec total, {tokens_generated / t:.02f} tokens/sec", file=sys.stderr)
-    if fabric.device.type == "cuda":
-        print(f"Memory used: {torch.cuda.max_memory_reserved() / 1e9:.02f} GB", file=sys.stderr)
+    # if fabric.device.type == "cuda":
+    #     print(f"Memory used: {torch.cuda.max_memory_reserved() / 1e9:.02f} GB", file=sys.stderr)
 
     return output
 
 
 ######### PREPARE PROMPT AND INPUT #########
-def get_object_list():
-    object_list = [None, None, None]
-    counter = 0
-    for direction in directions:
-        # Open the file in read mode
-        file_path = f"input/objects/frame{frame_number:04}_{direction}.txt"
-        check_if_path_is_available(file_path)
-        with open(file_path, "r") as file:
-            # Read the entire file into the string, replacing newline characters with ", "
-            objects = file.read().replace("\n", ", ")
-            object_list[counter] = objects
-        counter += 1
-    return object_list
 
-
-def check_if_path_is_available(path):
+def wait_until_path_is_available(path):
     while True:
         if os.path.exists(path):
             break
 
 
-def get_scene_caption():
+def get_object_list(iteration):
+    object_list = [None, None, None]
+    dir = 0
+    for direction in directions:
+        # Open the file in read mode
+        file_path = f"input/objects/frame{iteration:04}_{direction}.txt"
+        wait_until_path_is_available(file_path)
+        with open(file_path, "r") as file:
+            # Read the entire file into the string, replacing newline characters with ", "
+            objects = file.read().replace("\n", ", ")
+            objects = objects[:-2] + "."
+            object_list[dir] = objects
+        dir += 1
+    return object_list
+
+
+def get_scene_caption(iteration):
     scene_caption = [None, None, None]
     counter = 0
     for direction in directions:
         # Open the file in read mode
-        file_path = f"input/captions/caption{frame_number:04}_{direction}_prompt3.txt"
-        check_if_path_is_available(file_path)
+        file_path = f"input/captions/caption{iteration:04}_{direction}_prompt3.txt"
+        wait_until_path_is_available(file_path)
         try:
             with open(file_path, "r") as file:
                 scene_caption[counter] = file.readline()
@@ -158,30 +161,84 @@ def get_scene_caption():
 
 
 def fuse_objects_and_scene(objects, caption) -> str:
-    prompt = ""
+    input = ""
     for i in range(len(directions)):
-        prompt = prompt + f"On the {directions[i]} there are following objects: {objects[i]}. With this image caption: {caption[i]}. "
+        # input = input + f"On the {directions[i]} there are following objects: {objects[i]}. With this image caption: {caption[i]}. "
+        input = input + f"Objects visible on the {directions[i]}: {objects[i]}\n"
+    return input
+
+
+def create_input(iteration):
+    # get object list and scene captioning.
+    object_list = get_object_list(iteration)
+    scene_caption = get_scene_caption(iteration)
+    input = fuse_objects_and_scene(object_list, scene_caption)
+    # return "[Bread, DiningTable, Egg, Drawer, Toaster, Fork, Potato, Mirror, GarbageBag, AluminumFoil, Sink, Plate,
+    # Cup, CounterTop, SoapBottle, Shelf, Chair, StoveKnob, Pan, ButterKnife, CoffeeMachine, PepperShaker, Spoon,
+    # Pot, Window, LightSwitch, Cabinet, Spatula, SaltShaker, Apple, Faucet, StoveBurner, GarbageCan, Bowl, Lettuce,
+    # Fridge, Knife, Microwave, Mug, Tomato, Blinds, DishSponge, SideTable]"
+    return input
+
+
+def create_prompt(iteration, target_object):
+    prompt = preprompt(target_object)
+
+    prompt += "Captionized Scenes:\n"
+    captionized_scenes = get_scene_caption(iteration)
+    scene_prompt = generate_scene_prompt(captionized_scenes)
+    prompt += scene_prompt
+
+    prompt += "Visible Objects:\n"
+    object_list = get_object_list(iteration)
+    object_prompt = generate_object_prompt(object_list)
+    prompt += object_prompt
+
+    prompt += "Instruction: \n"
+    prompt += f"You want to help come closer to the {target_object} within one step towards either left, front " \
+              "or right. For this I go one step towards the "
+
     return prompt
 
 
-def create_input():
-    # get object list and scene captioning.
-    object_list = get_object_list()
-    scene_caption = get_scene_caption()
-    inputt = fuse_objects_and_scene(object_list, scene_caption)
-    # return "[Bread, DiningTable, Egg, Drawer, Toaster, Fork, Potato, Mirror, GarbageBag, AluminumFoil, Sink, Plate, Cup, CounterTop, SoapBottle, Shelf, Chair, StoveKnob, Pan, ButterKnife, CoffeeMachine, PepperShaker, Spoon, Pot, Window, LightSwitch, Cabinet, Spatula, SaltShaker, Apple, Faucet, StoveBurner, GarbageCan, Bowl, Lettuce, Fridge, Knife, Microwave, Mug, Tomato, Blinds, DishSponge, SideTable]"
-    return inputt
+def generate_object_prompt(objects):
+    object_prompt = ""
+    for object, direction in zip(objects, directions):
+        object_prompt += f"The following are the objects visible in direction {direction}: {object}"
+    return object_prompt
 
 
-def save_string(string, test_number, command_or_prompt):
+def generate_scene_prompt(scenes):
+    scene_prompt = ""
+    for scene, direction in zip(scenes, directions):
+        scene_prompt += f"The following sentence is the scene caption of direction {direction}: {scene}"
+    return scene_prompt
+
+
+def preprompt(target_object) -> str:
+    preprompt = "You are a sophisticated robot which helps humans find objects within their homes. The three " \
+                "different directions (left, front, right) are described for you in words and the visible objects are " \
+                "listed. Your task is to predict the direction (left, front or right) which has the highest " \
+                f"probability to lead to the target object: {target_object}. Always answer with only one of these words:" \
+                " \"left\", \"front\" or \"right\".\n"
+
+    return preprompt
+
+
+######### Saving of Prompt or Command #########
+
+def save_string(string, iteration, test_number, command=True, test=False):
     output_file = ""
-    if command_or_prompt == "command":
-        output_file = f"output/test_{test_number:02}/command{frame_number}.txt"
-    elif command_or_prompt == "prompt":
-        output_file = f"output/test_{test_number:02}/prompt.txt"
+    if command:
+        if test:
+            output_file = f"output/test_{test_number:02}/command{iteration}.txt"
+        else:
+            output_file = f"output/command{iteration}.txt"
     else:
-        print("Could not save string.")
-        return
+        if test:
+            output_file = f"output/test_{test_number:02}/prompt{iteration}.txt"
+        else:
+            output_file = f"output/prompt{iteration}.txt"
+
     # Create the directory if it doesn't exist
     os.makedirs(os.path.dirname(output_file), exist_ok=True)
     with open(output_file, "w") as file:
@@ -244,8 +301,8 @@ def receive_data_from_socket(client_socket):
                     return
 
 
-def send_data_to_socket(frame, client_socket):
-    file_name = f"command{frame:04}.txt"
+def send_data_to_socket(iteration, client_socket):
+    file_name = f"command{iteration:04}.txt"
     current_directory = os.getcwd()
     file_path = os.path.join(current_directory, "output", file_name)
     # Send the filename first
@@ -267,23 +324,29 @@ def send_data_to_socket(frame, client_socket):
 def main():
     # client_socket = setup_socket()
     # receive_data_from_socket(client_socket)
-    global frame_number
+    # send_data_to_socket(iteration, "left", client_socket)
 
-    # send_data_to_socket(frame_number, "left", client_socket)
-    test_number = 17
+    test_number = 13
 
-    # for ii in range(1):
-    prompt = ["What do Lamas eat?",
-              "Can you make me a sandwich?"]
+    # prompt = ["In which direction should I go to find the fridge?",
+    #           "Should I go left, front or right to find the fridge?",
+    #           "You are a robot which is build to help humans. I want you to find the fridge. In which direction do you go?",
+    #           "You are a robot which is build to help humans. I want you to find the fridge. Do you go left, front or rigth?"]
+
     model = prepare_model()
-    for i in range(len(prompt)):
-        save_string(prompt[i], test_number, "prompt")
-        # for i in range(1):
-            # created_input = create_input()
-            # print(f"Prompt inserted into the model. Now i = {i} and ii = {ii}.")
-        navigation_command = run_model(model, prompt[i])
-        save_string(navigation_command, test_number, "command")
-        test_number += 1
+
+    for iteration in range(0, 3):
+        prompt = create_prompt(iteration, target_object="Fridge")
+        navigation_command = run_model(model, prompt, test_number, iteration)
+
+
+    # for p in range(len(prompt)):
+    #     iteration = 0
+    #     created_input = create_input(iteration)
+    #     print(f"Prompt inserted into the model. Now prompt = {p}.")
+    #     navigation_command = run_model(model, prompt[p], test_number, iteration, created_input)
+    #     save_string(navigation_command, test_number, "command", iteration)
+        # test_number += 1
 
 
 if __name__ == "__main__":
@@ -298,5 +361,5 @@ if __name__ == "__main__":
     CLI(main)
     # client_socket = setup_socket()
     # for i in range(6):
-    #     receive_data_from_socket(client_socket)
+    #     receive_data_from_socket(client_socket, iteration)
     # send_data_to_socket(0, client_socket)
