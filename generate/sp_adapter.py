@@ -69,7 +69,7 @@ def prepare_model():
     return model
 
 
-def run_model(model, prompt, test_number, iteration, input=""):
+def run_model(model, prompt, test_number, iteration, max_new_tokens, top_k, temperature, input=""):
     """Generates a response based on a given instruction and an optional input.
         This script will only work with checkpoints from the instruction-tuned LLaMA-Adapter model.
         See `finetune_adapter.py`.
@@ -77,20 +77,20 @@ def run_model(model, prompt, test_number, iteration, input=""):
     # tokenizer_path: The tokenizer path to load.
     tokenizer_path: Path = Path("checkpoints/lit-llama/tokenizer.model")
     # max_new_tokens: The number of generation steps to take.\
-    max_new_tokens: int = 100
+    # max_new_tokens: int = 20
     # top_k: The number of top most probable tokens to consider in the sampling process.
-    top_k: int = 200
+    # top_k: int = 50
     # temperature: A value controlling the randomness of the sampling process. Higher values result in more random samples.
-    temperature: float = 0.8
+    # temperature: float = 0.8
 
     assert tokenizer_path.is_file()
     tokenizer = Tokenizer(tokenizer_path)
-    sample = {"instruction": prompt, "input": input}
-    prompt = generate_prompt(sample)
+    # sample = {"instruction": prompt, "input": input}
+    # prompt = generate_prompt(sample)
     encoded = tokenizer.encode(prompt, bos=True, eos=False, device=model.device)
-    print("===================")
-    print(prompt)
-    print("===================")
+    # print("===================")
+    # print(prompt)
+    # print("===================")
     print(f"token shape: {encoded.shape}", file=sys.stderr)
     prompt_length = encoded.size(0)
 
@@ -109,7 +109,7 @@ def run_model(model, prompt, test_number, iteration, input=""):
     output = tokenizer.decode(y)
     save_string(prompt, iteration, test_number, command=False, test=True)
     save_string(output, iteration, test_number, command=True, test=True)
-    output = output.split("### Response:")[1].strip()
+    # output = output.split("### Response:")[1].strip()
     print(output)
 
     tokens_generated = y.size(0) - prompt_length
@@ -180,47 +180,53 @@ def create_input(iteration):
     return input
 
 
-def create_prompt(iteration, target_object):
-    prompt = preprompt(target_object)
+def create_prompt(iteration, i, target_object):
+    prompt = "###### Initial Situation:\n"
+    prompt += preprompt(target_object)
 
-    prompt += "Captionized Scenes:\n"
-    captionized_scenes = get_scene_caption(iteration)
-    scene_prompt = generate_scene_prompt(captionized_scenes)
-    prompt += scene_prompt
+    if i % 2 == 0:
+        prompt += "\n###### Captionized Scenes:\n"
+        captionized_scenes = get_scene_caption(iteration)
+        scene_prompt = generate_scene_prompt(captionized_scenes)
+        prompt += scene_prompt
 
-    prompt += "Visible Objects:\n"
+    prompt += "\n###### Visible Objects:\n"
     object_list = get_object_list(iteration)
     object_prompt = generate_object_prompt(object_list)
     prompt += object_prompt
 
-    prompt += "Instruction: \n"
-    prompt += f"You want to help come closer to the {target_object} within one step towards either left, front " \
-              "or right. For this I go one step towards the "
+    prompt += "\n###### Question:\n"
+    prompt += f"Which direction is most likely to get me closer to the {target_object}?\n"
 
+    prompt += "\n###### Answer:\n"
+    # prompt += f"To come closer to the {target_object} you should go "
+    prompt += f"Giving the answer with only left, front or right, my answer is: "
     return prompt
 
 
 def generate_object_prompt(objects):
     object_prompt = ""
     for object, direction in zip(objects, directions):
-        object_prompt += f"The following are the objects visible in direction {direction}: {object}"
+        # object_prompt += f"The following are the objects visible in direction {direction}: {object}\n"
+        object_prompt += f"These objects are visible in direction {direction}: {object}\n"
     return object_prompt
 
 
 def generate_scene_prompt(scenes):
     scene_prompt = ""
     for scene, direction in zip(scenes, directions):
-        scene_prompt += f"The following sentence is the scene caption of direction {direction}: {scene}"
+        scene_prompt += f"The following sentence is the scene caption of direction {direction}: {scene}\n"
     return scene_prompt
 
 
 def preprompt(target_object) -> str:
-    preprompt = "You are a sophisticated robot which helps humans find objects within their homes. The three " \
-                "different directions (left, front, right) are described for you in words and the visible objects are " \
-                "listed. Your task is to predict the direction (left, front or right) which has the highest " \
-                f"probability to lead to the target object: {target_object}. Always answer with only one of these words:" \
-                " \"left\", \"front\" or \"right\".\n"
+    preprompt = "You are a sophisticated robot which helps humans find objects within their homes. " \
+                f"Your task is to tell the direction which is most likely to get you closer to the {target_object}." \
+                "The objects visible to your left, front and right are all listed in the " \
+                "Visible Objects section. Your answer must be one word and can only be one of these words: " \
+                "Left, front, right." \
 
+    # preprompt = "You are given a list of visible objects in a room in the three directions left, front and right."
     return preprompt
 
 
@@ -326,18 +332,37 @@ def main():
     # receive_data_from_socket(client_socket)
     # send_data_to_socket(iteration, "left", client_socket)
 
-    test_number = 13
+    test_number = 150
 
     # prompt = ["In which direction should I go to find the fridge?",
     #           "Should I go left, front or right to find the fridge?",
-    #           "You are a robot which is build to help humans. I want you to find the fridge. In which direction do you go?",
-    #           "You are a robot which is build to help humans. I want you to find the fridge. Do you go left, front or rigth?"]
+    # "You are a robot which is build to help humans. I want you to find the fridge. In which direction do you go?",
+    # "You are a robot which is build to help humans. I want you to find the fridge. Do you go left, front or rigth?"]
 
     model = prepare_model()
+    max_new_tokens = 1
+    for tokens in range(1):
+        top_k = 20
+        for top in range(4):
+            temperature = 0.1
+            for temp in range(3):
+                iteration = 0
 
-    for iteration in range(0, 3):
-        prompt = create_prompt(iteration, target_object="Fridge")
-        navigation_command = run_model(model, prompt, test_number, iteration)
+                output_file = f"output/test_{test_number}/parameters.txt"
+                os.makedirs(os.path.dirname(output_file), exist_ok=True)
+                test_parameters = f"Testnumber: {test_number}, Temperature: {temperature}, top_k: {top_k}, max_new_tokens: {max_new_tokens}"
+                print(test_parameters)
+                with open(output_file, "w") as file:
+                    file.write(test_parameters)
+
+                for i in range(0, 4):
+                    prompt = create_prompt(iteration, i, target_object="ButterKnife")
+                    navigation_command = run_model(model, prompt, test_number, i, max_new_tokens, top_k, temperature)
+                    # iteration += 1
+                test_number += 1
+                temperature += 0.25
+            top_k *= 2
+        max_new_tokens *= 4
 
 
     # for p in range(len(prompt)):
