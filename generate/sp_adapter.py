@@ -31,14 +31,17 @@ def prepare_model():
     #     input: Optional input (Alpaca style).
 
     # adapter_path: Path to the checkpoint with trained adapter weights, which are the output of `finetune_adapter.py`.
-    adapter_path: Path = Path("out/adapter/alpaca/lit-llama-adapter-finetuned.pth")
+    # adapter_path: Path = Path("out/adapter/alpaca/lit-llama-adapter-finetuned.pth")
+
     # pretrained_path: The path to the checkpoint with pretrained LLaMA weights.
     pretrained_path: Path = Path("checkpoints/lit-llama/7B/lit-llama.pth")
+    # pretrained_path: Path = Path("llama-2-7b/consolidated.00.pth")
+
     # quantize: Whether to quantize the model and using which method:
     # ``"llm.int8"``: LLM.int8() mode, ``"gptq.int4"``: GPTQ 4-bit mode.
     quantize: Optional[str] = None
 
-    assert adapter_path.is_file()
+    # assert adapter_path.is_file()
     assert pretrained_path.is_file()
 
     # Initialize a 'Fabric' object for device configuration and management.
@@ -48,7 +51,8 @@ def prepare_model():
 
     print("Loading model ...", file=sys.stderr)
     t0 = time.time()
-    with lazy_load(pretrained_path) as pretrained_checkpoint, lazy_load(adapter_path) as adapter_checkpoint:
+    # with lazy_load(pretrained_path) as pretrained_checkpoint, lazy_load(adapter_path) as adapter_checkpoint:
+    with lazy_load(pretrained_path) as pretrained_checkpoint:
         name = llama_model_lookup(pretrained_checkpoint)
 
         with EmptyInitOnDevice(
@@ -76,7 +80,8 @@ def run_model(model, prompt, iteration, max_new_tokens, top_k, temperature):
         See `finetune_adapter.py`.
     """
     # tokenizer_path: The tokenizer path to load.
-    tokenizer_path: Path = Path("checkpoints/lit-llama/tokenizer.model")
+    # tokenizer_path: Path = Path("checkpoints/lit-llama/tokenizer.model")
+    tokenizer_path: Path = Path("checkpoints/llama/tokenizer.model")
 
     assert tokenizer_path.is_file()
     tokenizer = Tokenizer(tokenizer_path)
@@ -161,7 +166,7 @@ def get_scene_caption(iteration):
     counter = 0
     for direction in directions:
         # Open the file in read mode
-        file_path = f"input/captions/caption{iteration:04}_{direction}_prompt3.txt"
+        file_path = f"input/captions/caption{iteration:04}_{direction}.txt"
         wait_until_path_is_available(file_path)
         try:
             with open(file_path, "r") as file:
@@ -184,7 +189,7 @@ def get_object_list(iteration):
     dir = 0
     for direction in directions:
         # Open the file in read mode
-        file_path = f"input/objects/frame{iteration:04}_{direction}.txt"
+        file_path = f"input/objects/objects{iteration:04}_{direction}.txt"
         wait_until_path_is_available(file_path)
         with open(file_path, "r") as file:
             # Read the entire file into the string, replacing newline characters with ", "
@@ -209,19 +214,19 @@ def save_string(string, iteration, mode, test=False, test_number=0):
     output_file = ""
     if mode == "command":
         if test:
-            output_file = f"output/tests/test_{test_number:02}/command{iteration}.txt"
+            output_file = f"output/tests/test_{test_number:02}/command{iteration:04}.txt"
         else:
-            output_file = f"output/commands/command{iteration}.txt"
+            output_file = f"output/commands/command{iteration:04}.txt"
     if mode == "prompt":
         if test:
-            output_file = f"output/tests/test_{test_number:02}/prompt{iteration}.txt"
+            output_file = f"output/tests/test_{test_number:02}/prompt{iteration:04}.txt"
         else:
-            output_file = f"output/prompts/prompt{iteration}.txt"
+            output_file = f"output/prompts/prompt{iteration:04}.txt"
     if mode == "processed_command":
         if test:
-            output_file = f"output/tests/test_{test_number:02}/processed_command{iteration}.txt"
+            output_file = f"output/tests/test_{test_number:02}/processed_command{iteration:04}.txt"
         else:
-            output_file = f"output/commands/processed_command{iteration}.txt"
+            output_file = f"output/processed_commands/processed_command{iteration:04}.txt"
 
     # Create the directory if it doesn't exist
     os.makedirs(os.path.dirname(output_file), exist_ok=True)
@@ -237,6 +242,9 @@ def setup_socket():
     port = 54320
     #  Create a server socket
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+
+
     server_socket.bind((host, port))
     server_socket.listen(4)
     print("Waiting for a connection...")
@@ -249,50 +257,56 @@ def setup_socket():
 
 
 def receive_data_from_socket(client_socket):
-    for i in range(6):
+    while True:
+        # file_data = b''
+        saving_folder = ""
+        file_name = b''
+
+        # Receive the filename
         while True:
-            file_data = b''
-            file_name = b''
+            data = client_socket.recv(1)
+            if data == b'\0':
+                break
+            file_name += data
+        # Decode the filename
+        file_name = file_name.decode("utf-8")
 
-            # Receive the filename
+        # Exit program if target object is found
+        if file_name == "exit":
+            return True
+
+        # Specify the saving location and file name
+        if "caption" in file_name:
+            saving_folder = "input/captions/"
+        if "object" in file_name:
+            saving_folder = "input/objects/"
+        # saving_location = os.path.join(save_location, file_name)
+        current_directory = os.getcwd()
+        saving_location = os.path.join(current_directory, saving_folder, file_name)
+
+        # Receive and save the file
+        with open(saving_location, 'wb') as file:
+            buffer = b''
             while True:
-                data = client_socket.recv(1)
-                if data == b'\0':
+                # Receive and save the text file
+                data = client_socket.recv(1024)
+                if not data:
                     break
-                file_name += data
-            # Decode the filename
-            file_name = file_name.decode("utf-8")
-
-            # Specify the saving location and file name
-            # TODO: test which works better
-            save_location = "/home/bthomas/SP_TaPA/input/socket/"
-            file_path = os.path.join(save_location, file_name)
-            # current_directory = os.getcwd()
-            # file_path = os.path.join(current_directory, file_name)
-
-            # Receive and save the file
-            with open(file_path, 'wb') as file:
-                buffer = b''
-                while True:
-                    # Receive and save the text file
-                    data = client_socket.recv(1024)
-                    if not data:
-                        break
-                    # Add the newly received data to the buffer
-                    buffer += data
-                    while b'FILE_END' in buffer:
-                        # Split buffer at the first occurrence of 'FILE_END'
-                        file_data, buffer = buffer.split(b'FILE_END', 1)
-                        # Write the data to the file
-                        file.write(file_data)
-                        print(f"Text file {file_name} saved.")
-                        return
+                # Add the newly received data to the buffer
+                buffer += data
+                while b'FILE_END' in buffer:
+                    # Split buffer at the first occurrence of 'FILE_END'
+                    file_data, buffer = buffer.split(b'FILE_END', 1)
+                    # Write the data to the file
+                    file.write(file_data)
+                    print(f"Text file {file_name} saved.")
+                    return False
 
 
 def send_data_to_socket(iteration, client_socket):
-    file_name = f"processed_command{iteration}.txt"
+    file_name = f"processed_command{iteration:04}.txt"
     current_directory = os.getcwd()
-    file_path = os.path.join(current_directory, "output/commands", file_name)
+    file_path = os.path.join(current_directory, "output/processed_commands", file_name)
     # Send the filename first
     client_socket.send(file_name.encode("utf-8"))
 
@@ -326,7 +340,7 @@ def count_occurrences(file_path, word):
 
 def process_command(iteration):
     # Specify the path to the input text file
-    file_path = f'output/commands/command{iteration}.txt'
+    file_path = f'output/commands/command{iteration:04}.txt'
 
     # Create a dictionary to store counts
     count_dict = {
@@ -338,10 +352,15 @@ def process_command(iteration):
     # Find the variable name with the largest count
     max_count_variable = max(count_dict, key=count_dict.get)
 
-    delimiter = ", "  # Delimiter to use between elements
-    max_variables_string = delimiter.join(max_count_variable)
-
-    save_string(max_variables_string, iteration, "processed_command")
+    if max_count_variable == "left":
+        if count_dict.get("left") == count_dict.get("right"):
+            save_string("none", iteration, "processed_command")
+        elif count_dict.get("left") == count_dict.get("front"):
+            save_string("none", iteration, "processed_command")
+        else:
+            save_string(max_count_variable, iteration, "processed_command")
+    else:
+        save_string(max_count_variable, iteration, "processed_command")
 
 
 
@@ -350,6 +369,7 @@ def process_command(iteration):
 def main():
     # set target object which one wants to find
     target_object = "fridge"
+    target_object_found = False
 
     # Setting parameters for LLM
     max_new_tokens = 64
@@ -359,18 +379,22 @@ def main():
     # Preparing model
     model = prepare_model()
 
-    # Set-up connection with local machine
+    # Set-up connection with local machine and get target object
     client_socket = setup_socket()
+    target_object = client_socket.recv(1024)
+    target_object = target_object.decode("utf-8")
 
     # Keep track of which step/frame we are processing
     iteration = 0
 
     while True:
         # Get the data from local machine
-        receive_data_from_socket(client_socket)
+        for i in range(6):
+            target_object_found = receive_data_from_socket(client_socket)
+            if target_object_found:
+                break
 
-        # Check if target object is found
-        if target_object in get_object_list(iteration):
+        if target_object_found:
             break
 
         created_prompt = create_prompt(iteration, target_object)
@@ -381,6 +405,9 @@ def main():
 
         # Send command to local machine
         send_data_to_socket(iteration, client_socket)
+
+        iteration += 1
+        time.sleep(5)
 
     # Close socket after target has been found
     client_socket.close()
